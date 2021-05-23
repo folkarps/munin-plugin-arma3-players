@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+
+import socket
+import struct
+import sys
+
+### CONFIG ###
+
+target_servers = {
+  # Arma 3 Source query port is the game port + 1
+  "<server_name>": ("<server_hostname>", <arma3 game port number>+1)
+}
+
+##############
+
+# https://developer.valvesoftware.com/wiki/Server_queries
+def a2s_info_current_players(sock, server, challenge=None):
+  # A2S_INFO
+  if challenge is not None:
+    sock.sendto(struct.pack('<lB20sl', -1, 0x54, b'Source Engine Query\x00', challenge), server)
+  else:
+    sock.sendto(struct.pack('<lB20s', -1, 0x54, b'Source Engine Query\x00'), server)
+
+  resp = sock.recv(1400)
+  header = struct.unpack('<lB', resp[0:5])
+  payload = resp[5:]
+  assert (header[0] == -1), "Cannot handle multi-packet responses!"
+
+  # S2C_CHALLENGE
+  if header[1] == 0x41:
+    return a2s_info_current_players(sock, server, challenge=struct.unpack('<l', payload)[0])
+
+  assert (header[1] == 0x49), "Response was not A2S_INFO!"
+  payload = payload[1:] # skip Protocol
+  payload = payload[payload.index(b'\x00')+1:] # skip Name
+  payload = payload[payload.index(b'\x00')+1:] # skip Map
+  payload = payload[payload.index(b'\x00')+1:] # skip Folder
+  payload = payload[payload.index(b'\x00')+1:] # skip Game
+  payload = payload[2:] # skip ID
+
+  return payload[0] # Players
+
+def output_config():
+  print('graph_title Arma 3 Players')
+  print('graph_vlabel Connected Arma 3 Players')
+  print('graph_category arma3')
+  print('graph_info This graph shows the number of connected players on a Arma 3 server')
+  for name in target_servers:
+    print(f"{name}.label Players on {name}")
+    print(f"{name}.type GAUGE")
+
+### Main ###
+
+if len(sys.argv) > 1 and sys.argv[1] == 'config':
+  output_config()
+  exit()
+
+for name, server in target_servers.items():
+  target_servers[name] = (socket.gethostbyname(server[0]), server[1])
+
+with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp:
+  udp.settimeout(3)
+
+  for name, server in target_servers.items():
+    players = a2s_info_current_players(udp, server)
+    print(f"{name}.value {players}")
+
