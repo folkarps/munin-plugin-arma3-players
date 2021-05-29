@@ -62,6 +62,8 @@ with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp:
   udp.settimeout(3)
 
   for name, server in target_servers.items():
-    players = a2s_info_current_players(udp, server)
-    print(f"{name}.value {players}")
-
+    try:
+      players = a2s_info_current_players(udp, server)
+      print(f"{name}.value {players}")
+    except Exception:
+      print(f"{name}.value -1")
